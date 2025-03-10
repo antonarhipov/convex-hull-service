@@ -1,12 +1,13 @@
 package org.geometry.convexhull.ext
 
+import org.geometry.convexhull.ext.Algorithm.Companion.MINIMUM_POINTS_FOR_HULL
 import java.util.*
 
 /**
  * Implementation of the Andrew's Monotone Chain algorithm for finding the convex hull.
  * Time complexity: O(n log n) where n is the number of points.
  */
-class AndrewsMonotoneChainAlgorithm : Algorithm {
+class AndrewsMonotoneChain : Algorithm {
     override fun run(coordinates: List<Coordinate>): List<Coordinate> {
         // Need at least 3 points to form a convex hull
         if (coordinates.size < MINIMUM_POINTS_FOR_HULL) {
@@ -47,8 +48,8 @@ class AndrewsMonotoneChainAlgorithm : Algorithm {
         }
         
         // Remove the last point of each hull (as it's the same as the first point of the other hull)
-        if (lowerHull.size > 0) lowerHull.removeAt(lowerHull.size - 1)
-        if (upperHull.size > 0) upperHull.removeAt(upperHull.size - 1)
+        if (lowerHull.isNotEmpty()) lowerHull.removeAt(lowerHull.size - 1)
+        if (upperHull.isNotEmpty()) upperHull.removeAt(upperHull.size - 1)
         
         // Combine the lower and upper hulls to form the complete convex hull
         val convexHull = ArrayList<Coordinate>()

@@ -4,8 +4,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 
 @SpringBootApplication
-class ConvexHullServiceApplication
+class Application
 
 fun main(args: Array<String>) {
-    runApplication<ConvexHullServiceApplication>(*args)
+    runApplication<Application>(*args)
 }

@@ -1,13 +1,13 @@
 package org.geometry.convexhull.ext
 
+import org.geometry.convexhull.ext.Algorithm.Companion.MINIMUM_POINTS_FOR_HULL
 import java.util.*
-import kotlin.math.atan2
 
 /**
  * Implementation of the Graham scan algorithm for finding the convex hull.
  * Time complexity: O(n log n) where n is the number of points.
  */
-class GrahamScanAlgorithm : Algorithm {
+class GrahamScan : Algorithm {
     override fun run(coordinates: List<Coordinate>): List<Coordinate> {
         // Need at least 3 points to form a convex hull
         if (coordinates.size < MINIMUM_POINTS_FOR_HULL) {

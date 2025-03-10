@@ -10,10 +10,10 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 class AlgorithmController {
     @PostMapping("/ds")
-    fun createDList(@RequestBody ds: MutableList<D?>): ResponseEntity<MutableList<D?>?> {
-        val input = ds.toTypedArray<D?>()
+    fun createDList(@RequestBody ds: List<D>): ResponseEntity<List<D>> {
+        val input = ds.toTypedArray()
         val result = TheAlgorithm.run(input)
-        println("The convex contains " + result!!.size + " points")
-        return ResponseEntity.ok<MutableList<D?>?>(result)
+        println("The convex contains " + result.size + " points")
+        return ResponseEntity.ok(result)
     }
 }
