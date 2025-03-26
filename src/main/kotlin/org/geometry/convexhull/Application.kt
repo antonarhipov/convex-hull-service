@@ -1,11 +1,31 @@
 package org.geometry.convexhull
 
-import org.springframework.boot.autoconfigure.SpringBootApplication
+import com.apple.eawt.Application
 import org.springframework.boot.runApplication
 
-@SpringBootApplication
-class Application
+class MyClass {
+    fun someFunction() {}
+}
 
 fun main(args: Array<String>) {
     runApplication<Application>(*args)
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
