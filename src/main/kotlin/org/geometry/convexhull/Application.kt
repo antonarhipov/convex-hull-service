@@ -15,7 +15,7 @@ fun main(args: Array<String>) {
     runApplication<Application>(*args)
 }
 
-// split list of elements into a list of list by example element
+
 
 
 
