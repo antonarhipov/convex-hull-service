@@ -5,16 +5,23 @@ Create .junie/guidelines.md concisely describing style guideline Kotlin. Mention
 
 ## Prompt 2 - Improvements Plan
 
-### Option 1 - Manual
+### Option 1: Manual
 
-Analyze the docs/requirements.md and create a detailed plan for the improvements of this project. Write the plan to docs/plan.md file.
+Analyze the docs/requirements.md and create a detailed plan for the improvements of this project.
+Write the plan to the `docs/plan.md` file.
 
-### Option 2 - Automatic
+### Option 2: Automatic
 
-Analyze the project and create a detailed plan for the improvements of this project. Write the plan to docs/plan.md file
+Analyze the project and create a detailed plan for the improvements of this project.
+Write the plan to the `docs/plan.md` file
 
 ## Prompt 3 - Task List
-Create a detailed enumerated task list according to the suggested enhancements plan in docs/plan.md. Task items should have a placeholder [ ] for marking as done [x] upon task completion. Write the task list to docs/tasks.md file. Update Junie guidelines to include the task management approach.
+Create a detailed enumerated task list according to the suggested enhancements plan in `docs/plan.md`.
+Task items should have a placeholder [ ]
+for marking as done [x] upon task completion.
+Write the task list to `docs/tasks.md` file.
+Update Junie guidelines to include the task management approach.
 
 ## Prompt 4 - Implementation
-Proceed implementing the improvements plan according to the tasks listed in docs/tasks.md. Mark tasks as done [x] upon completion.
+Proceed to implement the improvement plan according to the tasks listed in `docs/tasks.md` file.
+Mark tasks as done [x] upon completion.
