@@ -24,7 +24,7 @@ This document outlines the preferred coding style for Kotlin projects.
 ### Functional Style
 
 - Use higher-order functions (`map`, `filter`, `fold`, etc.) instead of loops when appropriate
-- Prefer expressions over statements
+- Prefer expressions to statements
 - Use lambda expressions for short, simple operations
 - Consider using the sequence API for large collections to improve performance
 
