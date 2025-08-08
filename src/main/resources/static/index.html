@@ -33,7 +33,7 @@
     .status { font-size: 12px; margin-top: 8px; }
     .status.ok { color: var(--ok); }
     .status.err { color: var(--error); }
-    canvas { width: 100%; height: 480px; background: #0b1220; border-radius: 10px; display: block; }
+    canvas { width: 100%; height: 480px; background: #0b1220; border-radius: 10px; display: block; cursor: crosshair; }
     .canvas-wrap { position: relative; }
     .legend { position: absolute; right: 8px; top: 8px; background: rgba(0,0,0,.35); border: 1px solid #1f2937; border-radius: 8px; padding: 6px 8px; font-size: 12px; backdrop-filter: blur(4px); }
     .legend div { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
@@ -59,7 +59,7 @@
           <button id="btnClear">Clear</button>
         </div>
         <div id="status" class="status muted">Idle</div>
-        <div class="hint">Tip: coordinates are arbitrary integers; the visualizer will scale them to fit the canvas.</div>
+        <div class="hint">Tip: Click on the canvas to add points. Shift+Click or Right‑click near a point to delete it. Shift+Drag to box-select and delete a region. Coordinates are arbitrary integers; the visualizer will scale them to fit the canvas.</div>
         <div id="history" style="margin-top:12px">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
             <strong>History</strong>
@@ -94,6 +94,7 @@
 
     let lastPoints = [];
     let lastHull = [];
+    let lastTransform = null; // { W, H, M, minX, minY, scale }
 
     const COLORS = {
       bg: '#0b1220',
@@ -248,6 +249,8 @@
         for (const p of hull) dot(tx(p.x), ty(p.y), 3.5);
       }
 
+      // store transform for click-to-add (in CSS pixel space)
+      lastTransform = { W, H, M, minX, minY, scale };
       ctx.restore();
 
       function dot(x, y, r) {
@@ -358,6 +361,195 @@
     });
     document.getElementById('btnClear').addEventListener('click', () => { ta.value = ''; lastPoints = []; lastHull = []; draw([], []); setStatus('Cleared.'); });
     if (btnRefreshHistory) btnRefreshHistory.addEventListener('click', () => refreshHistory());
+
+    // Canvas add/delete support + box selection delete
+    function getCanvasCssCoords(evt) {
+      const rect = canvas.getBoundingClientRect();
+      const x = evt.clientX - rect.left;
+      const y = evt.clientY - rect.top;
+      return { x, y };
+    }
+    function cssToData(ptCss) {
+      const t = lastTransform;
+      if (!t) {
+        // default mapping when no points drawn yet
+        const M = 30;
+        const H = canvas.clientHeight || 600;
+        const x = Math.round(ptCss.x - M);
+        const y = Math.round((H - M) - ptCss.y);
+        return { x, y };
+      }
+      const { W, H, M, minX, minY, scale } = t;
+      const x = Math.round(minX + (ptCss.x - M) / Math.max(0.0001, scale));
+      const y = Math.round(minY + ((H - M) - ptCss.y) / Math.max(0.0001, scale));
+      return { x, y };
+    }
+    function dataToCss(ptData) {
+      const t = lastTransform;
+      if (!t) return null;
+      const { W, H, M, minX, minY, scale } = t;
+      const x = M + (ptData.x - minX) * scale;
+      const y = H - M - (ptData.y - minY) * scale;
+      return { x, y };
+    }
+    function findNearestIndexByCss(cssPt, points, maxDistPx = 8) {
+      if (!Array.isArray(points) || points.length === 0) return { idx: -1, dist: Infinity };
+      const t = lastTransform;
+      if (!t) return { idx: -1, dist: Infinity };
+      let bestIdx = -1, bestD2 = Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const sp = dataToCss(points[i]);
+        if (!sp) continue;
+        const dx = sp.x - cssPt.x;
+        const dy = sp.y - cssPt.y;
+        const d2 = dx*dx + dy*dy;
+        if (d2 < bestD2) { bestD2 = d2; bestIdx = i; }
+      }
+      const thr2 = maxDistPx * maxDistPx;
+      return bestD2 <= thr2 ? { idx: bestIdx, dist: Math.sqrt(bestD2) } : { idx: -1, dist: Infinity };
+    }
+    function tryDeleteAtCss(cssPt) {
+      const { idx } = findNearestIndexByCss(cssPt, lastPoints, 10);
+      if (idx >= 0) {
+        const removed = lastPoints[idx];
+        lastPoints = lastPoints.filter((_, i) => i !== idx);
+        lastHull = [];
+        ta.value = JSON.stringify(lastPoints, null, 2);
+        draw(lastPoints, lastHull);
+        setStatus('Deleted point (' + removed.x + ', ' + removed.y + '). Total: ' + lastPoints.length + '.');
+        return true;
+      }
+      return false;
+    }
+
+    // Box selection state
+    let isBoxSelecting = false;
+    let boxStart = null; // {x,y} in CSS px
+    let boxEnd = null;   // {x,y} in CSS px
+
+    function drawSelectionBox() {
+      if (!isBoxSelecting || !boxStart || !boxEnd) return;
+      const dpr = window.devicePixelRatio || 1;
+      // draw() used CSS pixel units by scaling; repeat that here
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      const x1 = Math.min(boxStart.x, boxEnd.x);
+      const y1 = Math.min(boxStart.y, boxEnd.y);
+      const x2 = Math.max(boxStart.x, boxEnd.x);
+      const y2 = Math.max(boxStart.y, boxEnd.y);
+      // semi-transparent fill and outline
+      ctx.fillStyle = 'rgba(56,189,248,0.12)'; // cyan-ish
+      ctx.strokeStyle = getCSS('--accent');
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.rect(x1, y1, x2 - x1, y2 - y1);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function redrawWithSelectionOverlay() {
+      draw(Array.isArray(lastPoints) ? lastPoints : [], Array.isArray(lastHull) ? lastHull : []);
+      drawSelectionBox();
+    }
+
+    function deleteInSelectionRect(x1, y1, x2, y2) {
+      if (!Array.isArray(lastPoints) || lastPoints.length === 0) return 0;
+      const rx1 = Math.min(x1, x2), ry1 = Math.min(y1, y2);
+      const rx2 = Math.max(x1, x2), ry2 = Math.max(y1, y2);
+      const keep = [];
+      let removedCount = 0;
+      for (const p of lastPoints) {
+        const css = dataToCss(p);
+        if (!css) { keep.push(p); continue; }
+        const inside = css.x >= rx1 && css.x <= rx2 && css.y >= ry1 && css.y <= ry2;
+        if (inside) removedCount++; else keep.push(p);
+      }
+      if (removedCount > 0) {
+        lastPoints = keep;
+        lastHull = [];
+        ta.value = JSON.stringify(lastPoints, null, 2);
+      }
+      return removedCount;
+    }
+
+    canvas.addEventListener('mousedown', (evt) => {
+      // Start box selection only with Shift + left button
+      if (!evt.shiftKey || evt.button !== 0) return;
+      const cssPt = getCanvasCssCoords(evt);
+      isBoxSelecting = true;
+      boxStart = cssPt;
+      boxEnd = cssPt;
+      evt.preventDefault();
+      redrawWithSelectionOverlay();
+    });
+
+    canvas.addEventListener('mousemove', (evt) => {
+      if (!isBoxSelecting) return;
+      boxEnd = getCanvasCssCoords(evt);
+      redrawWithSelectionOverlay();
+    });
+
+    window.addEventListener('mouseup', (evt) => {
+      if (!isBoxSelecting) return;
+      const endPt = getCanvasCssCoords(evt);
+      boxEnd = endPt;
+      // Determine if it's a click-ish (very small box) -> fallback to single delete
+      const dx = boxEnd.x - boxStart.x;
+      const dy = boxEnd.y - boxStart.y;
+      const dist2 = dx*dx + dy*dy;
+      const CLICK_THR2 = 9; // 3px
+      let msg = '';
+      if (dist2 <= CLICK_THR2) {
+        // act like Shift+Click delete
+        const deleted = tryDeleteAtCss(boxStart);
+        if (!deleted) setStatus('No point near cursor to delete. Hold Shift and click closer to a point.', 'err');
+      } else {
+        // box delete
+        const removed = deleteInSelectionRect(boxStart.x, boxStart.y, boxEnd.x, boxEnd.y);
+        draw(lastPoints, lastHull);
+        if (removed > 0) {
+          setStatus('Deleted ' + removed + ' point' + (removed === 1 ? '' : 's') + ' in selection. Total: ' + lastPoints.length + '.');
+        } else {
+          setStatus('No points inside the selection.', 'err');
+        }
+      }
+      // reset selection state
+      isBoxSelecting = false; boxStart = null; boxEnd = null;
+    });
+
+    canvas.addEventListener('click', (evt) => {
+      try {
+        // If box selection was used, mouseup already handled; ignore this click when Shift is pressed
+        if (evt.shiftKey) {
+          const cssPt = getCanvasCssCoords(evt);
+          const deleted = tryDeleteAtCss(cssPt);
+          if (!deleted) setStatus('No point near cursor to delete. Hold Shift and click closer to a point.', 'err');
+          return;
+        }
+        const cssPt = getCanvasCssCoords(evt);
+        const dataPt = cssToData(cssPt);
+        // add mode (immutable)
+        lastPoints = Array.isArray(lastPoints) ? [...lastPoints, dataPt] : [dataPt];
+        lastHull = [];
+        ta.value = JSON.stringify(lastPoints, null, 2);
+        draw(lastPoints, lastHull);
+        setStatus('Added point (' + dataPt.x + ', ' + dataPt.y + '). Total: ' + lastPoints.length + '.');
+      } catch (e) {
+        setStatus('Failed to process click: ' + (e && e.message ? e.message : e), 'err');
+      }
+    });
+
+    canvas.addEventListener('contextmenu', (evt) => {
+      evt.preventDefault();
+      try {
+        const cssPt = getCanvasCssCoords(evt);
+        const deleted = tryDeleteAtCss(cssPt);
+        if (!deleted) setStatus('No point near cursor to delete. Right‑click closer to a point.', 'err');
+      } catch (e) {
+        setStatus('Failed to delete point: ' + (e && e.message ? e.message : e), 'err');
+      }
+    });
 
     // Initialize
     loadExample();
