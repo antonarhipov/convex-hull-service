@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Convex Hull Visualizer</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #22d3ee;
+      --accent-2: #e91e63;
+      --point: #a3e635;
+      --grid: #1f2937;
+      --error: #ef4444;
+      --ok: #34d399;
+    }
+    html, body { height: 100%; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; background: var(--bg); color: var(--text); }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    h1 { font-size: 20px; margin: 0 0 12px; font-weight: 600; letter-spacing: .2px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    .panel { background: var(--panel); border-radius: 10px; border: 1px solid #1f2937; box-shadow: 0 1px 0 rgba(255,255,255,.03) inset; }
+    .pad { padding: 12px; }
+    textarea { width: 100%; min-height: 220px; resize: vertical; box-sizing: border-box; background: #0b1220; color: var(--text); border: 1px solid #1f2937; border-radius: 8px; padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    button { background: #0b1220; color: var(--text); border: 1px solid #1f2937; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+    button.primary { background: linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%); border-color: transparent; }
+    button:hover { filter: brightness(1.05); }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .status { font-size: 12px; margin-top: 8px; }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--error); }
+    canvas { width: 100%; height: 480px; background: #0b1220; border-radius: 10px; display: block; }
+    .canvas-wrap { position: relative; }
+    .legend { position: absolute; right: 8px; top: 8px; background: rgba(0,0,0,.35); border: 1px solid #1f2937; border-radius: 8px; padding: 6px 8px; font-size: 12px; backdrop-filter: blur(4px); }
+    .legend div { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+    .sw { width: 14px; height: 3px; border-radius: 999px; display: inline-block; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .muted { color: var(--muted); }
+    .footer { margin-top: 10px; color: var(--muted); font-size: 12px; }
+    code { color: #cbd5e1; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Convex Hull Visualizer</h1>
+    <div class="row">
+      <div class="panel pad">
+        <div class="hint">Enter an array of points as JSON: <code>[{"x": 10, "y": 20}, ...]</code></div>
+        <textarea id="jsonInput" spellcheck="false" aria-label="Points JSON input"></textarea>
+        <div class="controls">
+          <button class="primary" id="btnSend">Compute hull (POST /ds)</button>
+          <button id="btnExample">Load example</button>
+          <input id="randCount" type="number" min="1" max="10000" value="50" aria-label="Random points count" style="width: 90px; background: #0b1220; color: var(--text); border: 1px solid #1f2937; border-radius: 8px; padding: 8px 10px;" />
+          <button id="btnRandom">Random</button>
+          <button id="btnClear">Clear</button>
+        </div>
+        <div id="status" class="status muted">Idle</div>
+        <div class="hint">Tip: coordinates are arbitrary integers; the visualizer will scale them to fit the canvas.</div>
+        <div id="history" style="margin-top:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+            <strong>History</strong>
+            <button id="btnRefreshHistory" title="Refresh history">Refresh</button>
+          </div>
+          <div class="hint">Click an item to load its input and hull.</div>
+          <ul id="historyList" style="list-style:none;padding:0;margin:8px 0;max-height:220px;overflow:auto"></ul>
+        </div>
+      </div>
+      <div class="panel pad">
+        <div class="canvas-wrap">
+          <canvas id="canvas" width="1000" height="600" aria-label="Convex hull drawing"></canvas>
+          <div class="legend">
+            <div><span class="dot" style="background: var(--point)"></span> Input points</div>
+            <div><span class="sw" style="background: var(--accent-2)"></span> Hull edges</div>
+            <div><span class="dot" style="background: var(--accent)"></span> Hull vertices</div>
+          </div>
+        </div>
+        <div class="footer">Server endpoints: <code>POST /ds</code>, <code>GET /executions</code>, <code>GET /executions/{id}</code></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ta = document.getElementById('jsonInput');
+    const statusEl = document.getElementById('status');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const historyListEl = document.getElementById('historyList');
+    const btnRefreshHistory = document.getElementById('btnRefreshHistory');
+    const randCountInput = document.getElementById('randCount');
+
+    let lastPoints = [];
+    let lastHull = [];
+
+    const COLORS = {
+      bg: '#0b1220',
+      grid: '#1f2937',
+      point: getCSS('--point'),
+      hull: getCSS('--accent-2'),
+      hullPoint: getCSS('--accent'),
+      muted: getCSS('--muted')
+    };
+
+    function getCSS(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#fff'; }
+
+    function setStatus(msg, type = 'muted') {
+      statusEl.textContent = msg;
+      statusEl.className = 'status ' + (type === 'ok' ? 'ok' : type === 'err' ? 'err' : 'muted');
+    }
+
+    function loadExample() {
+      const sample = [
+        {x: 30, y: 40}, {x: 60, y: 80}, {x: 110, y: 30}, {x: 160, y: 90}, {x: 210, y: 150},
+        {x: 260, y: 20}, {x: 320, y: 60}, {x: 370, y: 120}, {x: 430, y: 40}, {x: 470, y: 160},
+        {x: 510, y: 70}, {x: 560, y: 30}, {x: 600, y: 140}, {x: 650, y: 90}, {x: 690, y: 180}
+      ];
+      ta.value = JSON.stringify(sample, null, 2);
+      lastPoints = sample;
+      lastHull = [];
+      draw(sample, []);
+      setStatus('Loaded example dataset (' + sample.length + ' points).');
+    }
+
+    function generateRandom(n = 50) {
+      const pts = Array.from({ length: n }, () => ({ x: Math.floor(Math.random() * 1000), y: Math.floor(Math.random() * 1000) }));
+      ta.value = JSON.stringify(pts, null, 2);
+      lastPoints = pts;
+      lastHull = [];
+      draw(pts, []);
+      setStatus('Generated ' + n + ' random points.');
+    }
+
+    function parsePoints(text) {
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error('Invalid JSON: ' + e.message);
+      }
+      if (!Array.isArray(data)) {
+        throw new Error('Expected a JSON array of points.');
+      }
+      const pts = data.map((p, i) => {
+        if (typeof p !== 'object' || p === null || !('x' in p) || !('y' in p)) {
+          throw new Error('Item #' + (i + 1) + ' is not a valid point object with x and y.');
+        }
+        const x = Number(p.x), y = Number(p.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+          throw new Error('Point #' + (i + 1) + ' has non-finite coordinates.');
+        }
+        return { x: Math.round(x), y: Math.round(y) };
+      });
+      if (pts.length === 0) {
+        throw new Error('No points provided.');
+      }
+      return pts;
+    }
+
+    async function sendToServer(points) {
+      const res = await fetch('/ds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(points)
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error('Server responded ' + res.status + ' ' + res.statusText + (text ? (': ' + text) : ''));
+      }
+      let parsed = [];
+      try {
+        parsed = text ? JSON.parse(text) : [];
+      } catch (e) {
+        throw new Error('Failed to parse server response as JSON.');
+      }
+      const execId = res.headers.get('X-Execution-Id');
+      return { hull: parsed, execId };
+    }
+
+    function draw(points, hull) {
+      // HiDPI scale
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = canvas.clientWidth || 1000;
+      const cssH = canvas.clientHeight || 600;
+      if (canvas.width !== Math.floor(cssW * dpr) || canvas.height !== Math.floor(cssH * dpr)) {
+        canvas.width = Math.floor(cssW * dpr);
+        canvas.height = Math.floor(cssH * dpr);
+      }
+      ctx.save();
+      ctx.scale(dpr, dpr);
+
+      const W = cssW, H = cssH, M = 30;
+      // background and subtle grid
+      ctx.fillStyle = COLORS.bg;
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = COLORS.grid;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = M; x < W - M; x += 40) { ctx.moveTo(x, M); ctx.lineTo(x, H - M); }
+      for (let y = M; y < H - M; y += 40) { ctx.moveTo(M, y); ctx.lineTo(W - M, y); }
+      ctx.stroke();
+
+      if (!points || points.length === 0) {
+        ctx.restore();
+        return;
+      }
+
+      // bounding box from input points
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of points) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }
+      if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+        minX = minY = 0; maxX = maxY = 1;
+      }
+      const spanX = Math.max(1, maxX - minX);
+      const spanY = Math.max(1, maxY - minY);
+      const scale = Math.max(0.0001, Math.min((W - 2*M) / spanX, (H - 2*M) / spanY));
+      const tx = (x) => M + (x - minX) * scale;
+      const ty = (y) => H - M - (y - minY) * scale; // invert Y for screen coords
+
+      // draw input points
+      ctx.fillStyle = COLORS.point;
+      for (const p of points) {
+        dot(tx(p.x), ty(p.y), 3);
+      }
+
+      // draw hull edges
+      if (Array.isArray(hull) && hull.length > 0) {
+        ctx.strokeStyle = COLORS.hull;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(tx(hull[0].x), ty(hull[0].y));
+        for (let i = 1; i < hull.length; i++) {
+          ctx.lineTo(tx(hull[i].x), ty(hull[i].y));
+        }
+        // close the hull
+        ctx.lineTo(tx(hull[0].x), ty(hull[0].y));
+        ctx.stroke();
+
+        // hull vertices
+        ctx.fillStyle = COLORS.hullPoint;
+        for (const p of hull) dot(tx(p.x), ty(p.y), 3.5);
+      }
+
+      ctx.restore();
+
+      function dot(x, y, r) {
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    async function fetchJson(url) {
+      const res = await fetch(url);
+      const text = await res.text();
+      if (!res.ok) throw new Error(res.status + ' ' + res.statusText + (text ? (': ' + text) : ''));
+      return text ? JSON.parse(text) : null;
+    }
+
+    function renderHistory(items, selectedId = null) {
+      if (!Array.isArray(items)) items = [];
+      if (!historyListEl) return;
+      if (items.length === 0) {
+        historyListEl.innerHTML = '<li class="muted">No executions yet.</li>';
+        return;
+      }
+      historyListEl.innerHTML = items.map(s => {
+        const date = s.timestamp ? new Date(s.timestamp) : null;
+        const when = date ? date.toLocaleString() : '';
+        const selected = (selectedId && s.id === selectedId) ? ' outline: 1px solid var(--accent);' : '';
+        return `<li data-id="${s.id}" style="padding:6px 8px;border:1px solid #1f2937;border-radius:8px;margin:4px 0;cursor:pointer;${selected}">
+                  <div style="display:flex;justify-content:space-between;gap:8px;">
+                    <span>${when}</span>
+                    <span class="muted">in:${s.inputCount} hull:${s.resultCount} t:${s.durationMs}ms</span>
+                  </div>
+                </li>`;
+      }).join('');
+      historyListEl.querySelectorAll('li[data-id]').forEach(li => {
+        li.addEventListener('click', () => {
+          const id = li.getAttribute('data-id');
+          loadExecution(id);
+        });
+      });
+    }
+
+    async function refreshHistory(selectedId = null) {
+      try {
+        const list = await fetchJson('/executions');
+        renderHistory(list || [], selectedId);
+      } catch (e) {
+        setStatus('Failed to load history: ' + e.message, 'err');
+      }
+    }
+
+    async function loadExecution(id) {
+      if (!id) return;
+      setStatus('Loading execution ' + id + ' ...');
+      try {
+        const rec = await fetchJson('/executions/' + encodeURIComponent(id));
+        const points = Array.isArray(rec && rec.input) ? rec.input : [];
+        const hull = Array.isArray(rec && rec.result) ? rec.result : [];
+        ta.value = JSON.stringify(points, null, 2);
+        lastPoints = points;
+        lastHull = hull;
+        draw(points, hull);
+        setStatus('Loaded execution ' + id + ' (' + points.length + ' pts, hull ' + hull.length + ').', hull.length ? 'ok' : 'muted');
+      } catch (e) {
+        setStatus('Failed to load execution: ' + e.message, 'err');
+      }
+    }
+
+    async function onSend() {
+      let points;
+      try {
+        points = parsePoints(ta.value);
+      } catch (e) {
+        setStatus(e.message, 'err');
+        draw([], []);
+        return;
+      }
+
+      setStatus('Sending ' + points.length + ' points to /ds ...');
+      let res;
+      try {
+        res = await sendToServer(points);
+      } catch (e) {
+        setStatus(e.message, 'err');
+        draw(points, []);
+        return;
+      }
+
+      const hull = Array.isArray(res && res.hull) ? res.hull : [];
+      const execId = res && res.execId ? res.execId : null;
+      lastPoints = points;
+      lastHull = hull;
+      draw(points, hull);
+      const hullCount = hull.length;
+      if (hullCount === 0) {
+        setStatus('No hull returned (need at least 3 non-collinear points).', 'err');
+      } else {
+        setStatus('OK. Hull has ' + hullCount + ' points.' + (execId ? ' Saved as ' + execId + '.' : ''), 'ok');
+      }
+      refreshHistory(execId);
+    }
+
+    document.getElementById('btnSend').addEventListener('click', onSend);
+    document.getElementById('btnExample').addEventListener('click', loadExample);
+    document.getElementById('btnRandom').addEventListener('click', () => {
+      const v = randCountInput ? parseInt(randCountInput.value, 10) : 50;
+      const n = Number.isFinite(v) ? Math.max(1, Math.min(10000, v)) : 50;
+      if (randCountInput) randCountInput.value = String(n);
+      generateRandom(n);
+    });
+    document.getElementById('btnClear').addEventListener('click', () => { ta.value = ''; lastPoints = []; lastHull = []; draw([], []); setStatus('Cleared.'); });
+    if (btnRefreshHistory) btnRefreshHistory.addEventListener('click', () => refreshHistory());
+
+    // Initialize
+    loadExample();
+    refreshHistory();
+    window.addEventListener('resize', () => {
+      // Redraw on resize to keep scaling correct
+      try {
+        draw(Array.isArray(lastPoints) ? lastPoints : [], Array.isArray(lastHull) ? lastHull : []);
+      } catch (_) { /* ignore */ }
+    });
+  </script>
+</body>
+</html>

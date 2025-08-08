@@ -13,7 +13,8 @@ This service implements multiple algorithms for finding the convex hull of a set
 - Spring Boot 3.4.3
 - Spring Web (REST API)
 - Spring Data JDBC
-- H2 Database
+- PostgreSQL (runtime)
+- Testcontainers (tests)
 - JUnit 5 for testing
 - Gradle for build management
 
@@ -84,6 +85,24 @@ Computes the convex hull of a set of points using the legacy algorithm.
 ```
 
 The service will start on port 8080 by default.
+
+## Web UI
+
+A simple UI is available at http://localhost:8080/ (served from `src/main/resources/static/index.html`).
+
+- Paste an array of points in JSON format into the textarea. Example:
+
+```json
+[
+  {"x": 0, "y": 0},
+  {"x": 1, "y": 1},
+  {"x": 2, "y": 0},
+  {"x": 0, "y": 2}
+]
+```
+
+- Click "Compute hull (POST /ds)" to send the request to `/ds` and visualize the result.
+- Use "Load example" or the "Random" button (with adjustable count) to generate inputs quickly.
 
 ## Testing
 

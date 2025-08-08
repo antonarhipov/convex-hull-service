@@ -21,6 +21,11 @@ This document outlines the preferred coding style for Kotlin projects.
 
 ## Specific Guidelines
 
+### Adding new libraries
+
+*** VERY IMPORTANT*** Use MCP tools
+Check the up-to-date documentation for the library you are adding to the project.
+
 ### Functional Style
 
 - Use higher-order functions (`map`, `filter`, `fold`, etc.) instead of loops when appropriate

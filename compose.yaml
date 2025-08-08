@@ -1,0 +1,16 @@
+# Docker Compose file to run PostgreSQL for the Convex Hull Service
+# Usage:
+#   docker compose up -d
+# The database credentials and database name match the Spring Boot defaults in
+# src/main/resources/application.properties, so the app can connect to
+# jdbc:postgresql://localhost:5432/convexhull with user=postgres password=postgres
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: convexhull
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
