@@ -53,6 +53,7 @@
         <textarea id="jsonInput" spellcheck="false" aria-label="Points JSON input"></textarea>
         <div class="controls">
           <button class="primary" id="btnSend">Compute hull (POST /ds)</button>
+          <select id="algoSelect" title="Algorithm" aria-label="Algorithm" style="background:#0b1220;color:var(--text);border:1px solid #1f2937;border-radius:8px;padding:8px 10px;"></select>
           <button id="btnExample">Load example</button>
           <input id="randCount" type="number" min="1" max="10000" value="50" aria-label="Random points count" style="width: 90px; background: #0b1220; color: var(--text); border: 1px solid #1f2937; border-radius: 8px; padding: 8px 10px;" />
           <button id="btnRandom">Random</button>
@@ -78,7 +79,7 @@
             <div><span class="dot" style="background: var(--accent)"></span> Hull vertices</div>
           </div>
         </div>
-        <div class="footer">Server endpoints: <code>POST /ds</code>, <code>GET /executions</code>, <code>GET /executions/{id}</code></div>
+        <div class="footer">Server endpoints: <code>GET /algorithms</code>, <code>POST /ds</code>, <code>GET /executions</code>, <code>GET /executions/{id}</code></div>
       </div>
     </div>
   </div>
@@ -91,6 +92,8 @@
     const historyListEl = document.getElementById('historyList');
     const btnRefreshHistory = document.getElementById('btnRefreshHistory');
     const randCountInput = document.getElementById('randCount');
+    const algoSelect = document.getElementById('algoSelect');
+    window.__algoSelect = algoSelect;
 
     let lastPoints = [];
     let lastHull = [];
@@ -161,7 +164,9 @@
     }
 
     async function sendToServer(points) {
-      const res = await fetch('/ds', {
+      const algoSel = (window.__algoSelect && window.__algoSelect.value) || 'legacy-jarvis';
+      const url = '/ds?algo=' + encodeURIComponent(algoSel);
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(points)
@@ -265,6 +270,37 @@
       return text ? JSON.parse(text) : null;
     }
 
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    async function loadAlgorithms() {
+      if (!algoSelect) return;
+      try {
+        const infos = await fetchJson('/algorithms');
+        const items = Array.isArray(infos) ? infos : [];
+        if (items.length === 0) throw new Error('No algorithms');
+        algoSelect.innerHTML = items.map(info => {
+          const val = String(info && info.name ? info.name : 'legacy-jarvis');
+          const label = String(info && info.displayName ? info.displayName : val);
+          return `<option value="${escapeHtml(val)}">${escapeHtml(label)}</option>`;
+        }).join('');
+        const def = items.find(i => i && i.name === 'legacy-jarvis') || items[0];
+        if (def) algoSelect.value = def.name;
+      } catch (e) {
+        // Fallback if discovery fails
+        algoSelect.innerHTML = '<option value="legacy-jarvis">Jarvis March (legacy)</option>' +
+                               '<option value="quickhull">Quickhull</option>' +
+                               '<option value="jarvis">Jarvis March (Kotlin)</option>';
+        algoSelect.value = 'legacy-jarvis';
+      }
+    }
+
     function renderHistory(items, selectedId = null) {
       if (!Array.isArray(items)) items = [];
       if (!historyListEl) return;
@@ -279,7 +315,7 @@
         return `<li data-id="${s.id}" style="padding:6px 8px;border:1px solid #1f2937;border-radius:8px;margin:4px 0;cursor:pointer;${selected}">
                   <div style="display:flex;justify-content:space-between;gap:8px;">
                     <span>${when}</span>
-                    <span class="muted">in:${s.inputCount} hull:${s.resultCount} t:${s.durationMs}ms</span>
+                    <span class="muted">algo:${s.algorithm} in:${s.inputCount} hull:${s.resultCount} t:${s.durationMs}ms</span>
                   </div>
                 </li>`;
       }).join('');
@@ -311,7 +347,8 @@
         lastPoints = points;
         lastHull = hull;
         draw(points, hull);
-        setStatus('Loaded execution ' + id + ' (' + points.length + ' pts, hull ' + hull.length + ').', hull.length ? 'ok' : 'muted');
+        const algo = rec && rec.algorithm ? (' algo:' + rec.algorithm) : '';
+        setStatus('Loaded execution ' + id + ' (' + points.length + ' pts, hull ' + hull.length + ').' + algo, hull.length ? 'ok' : 'muted');
       } catch (e) {
         setStatus('Failed to load execution: ' + e.message, 'err');
       }
@@ -553,6 +590,7 @@
 
     // Initialize
     loadExample();
+    loadAlgorithms();
     refreshHistory();
     window.addEventListener('resize', () => {
       // Redraw on resize to keep scaling correct
